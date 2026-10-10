@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Duet</title>
+<style>
+  :root {
+    --bg: #f6f7f8; --panel: #fff; --ink: #1b1d1f; --dim: #6a7179;
+    --line: #e2e5e8; --master: #0a6e73; --slave: #9a5b00;
+    --master-bg: #e6f2f2; --slave-bg: #faf0df;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141618; --panel: #1c1f22; --ink: #e8eaec; --dim: #969ca3;
+      --line: #2b3035; --master: #4fc3c8; --slave: #e0a24a;
+      --master-bg: #16302f; --slave-bg: #2e2316;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; background: var(--panel);
+           border-bottom: 1px solid var(--line); padding: 14px 20px; z-index: 2; }
+  h1 { margin: 0 0 2px; font-size: 16px; letter-spacing: .02em; }
+  h1 span { color: var(--dim); font-weight: 400; }
+  .task { color: var(--dim); font-size: 13px; max-width: 70ch; white-space: pre-wrap; }
+  .bar { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 8px;
+         font-size: 12px; color: var(--dim); }
+  .bar b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+         background: var(--master); margin-right: 5px; vertical-align: 1px; }
+  .dot.done { background: var(--dim); }
+  main { max-width: 860px; margin: 0 auto; padding: 18px 20px 60px; }
+  .conv { margin: 26px 0 0; }
+  .conv > h2 { font-size: 12px; font-weight: 600; letter-spacing: .08em;
+               text-transform: uppercase; color: var(--dim);
+               border-top: 1px solid var(--line); padding-top: 12px; margin: 0 0 4px; }
+  .msg { margin: 14px 0; display: flex; }
+  .msg.slave { justify-content: flex-end; }
+  .bubble { max-width: 84%; border: 1px solid var(--line); border-radius: 10px;
+            padding: 9px 13px; background: var(--panel); }
+  .msg.master .bubble { background: var(--master-bg); border-color: transparent; }
+  .msg.slave  .bubble { background: var(--slave-bg);  border-color: transparent; }
+  .who { font-size: 11px; letter-spacing: .07em; text-transform: uppercase;
+         margin-bottom: 4px; }
+  .msg.master .who { color: var(--master); }
+  .msg.slave  .who { color: var(--slave); }
+  .who em { font-style: normal; color: var(--dim); margin-left: 8px;
+            letter-spacing: 0; text-transform: none; }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .empty, .waiting { color: var(--dim); font-size: 13px; padding: 30px 0; text-align: center; }
+  .waiting { padding: 14px 0; }
+  footer { text-align: center; color: var(--dim); font-size: 12px; padding: 0 0 30px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Duet <span id="sub"></span></h1>
+  <div class="task" id="task"></div>
+  <div class="bar">
+    <div><span class="dot" id="dot"></span><b id="status">…</b></div>
+    <div>conversation <b id="conv">–</b></div>
+    <div>sends <b id="sends">–</b></div>
+    <div>turn <b id="turn">–</b></div>
+    <div>messages <b id="count">0</b></div>
+  </div>
+</header>
+<main id="chat"><div class="empty">waiting for the first message…</div></main>
+<footer id="foot"></footer>
+
+<script>
+const $ = id => document.getElementById(id);
+let seen = -1;
+
+function atBottom() {
+  return window.innerHeight + window.scrollY >= document.body.scrollHeight - 80;
+}
+
+function render(s) {
+  $('sub').textContent = '· ' + s.conversations + ' × ' + s.sends + ' sends';
+  $('task').textContent = s.task || '';
+  $('status').textContent = s.status === 'complete' ? 'complete' : 'running';
+  $('dot').className = 'dot' + (s.status === 'complete' ? ' done' : '');
+  $('conv').textContent = s.conversation + '/' + s.conversations;
+  $('sends').textContent = s.sends_used + '/' + s.sends;
+  $('turn').textContent = s.turn || '–';
+  $('count').textContent = s.convs.reduce((n, c) => n + c.messages.length, 0);
+  $('foot').textContent = 'started ' + s.started;
+
+  if (s.version === seen) return;
+  const stick = atBottom();
+  seen = s.version;
+
+  const chat = $('chat');
+  chat.innerHTML = '';
+  let any = false;
+  for (const c of s.convs) {
+    if (!c.messages.length) continue;
+    any = true;
+    const box = document.createElement('section');
+    box.className = 'conv';
+    const h = document.createElement('h2');
+    h.textContent = 'conversation ' + c.index + ' of ' + s.conversations +
+                    (c.closed ? ' · closed' : '');
+    box.appendChild(h);
+    for (const m of c.messages) {
+      const row = document.createElement('div');
+      row.className = 'msg ' + m.role;
+      const b = document.createElement('div');
+      b.className = 'bubble';
+      const who = document.createElement('div');
+      who.className = 'who';
+      who.innerHTML = m.role + ' <em>' + m.ts.replace('T', ' ') + '</em>';
+      const t = document.createElement('div');
+      t.className = 'text';
+      t.textContent = m.text;
+      b.appendChild(who); b.appendChild(t); row.appendChild(b); box.appendChild(row);
+    }
+    chat.appendChild(box);
+  }
+  if (!any) {
+    chat.innerHTML = '<div class="empty">waiting for the master’s first message…</div>';
+  } else if (s.status !== 'complete') {
+    const w = document.createElement('div');
+    w.className = 'waiting';
+    w.textContent = 'waiting for the ' + (s.turn || 'next') + '…';
+    chat.appendChild(w);
+  }
+  if (stick) window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function tick() {
+  try {
+    const r = await fetch('/api/state', {cache: 'no-store'});
+    render(await r.json());
+    $('status').style.opacity = 1;
+  } catch (e) {
+    $('status').textContent = 'hub offline';
+    $('status').style.opacity = .6;
+  }
+}
+tick();
+setInterval(tick, 1000);
+</script>
+</body>
+</html>

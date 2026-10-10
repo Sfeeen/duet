@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Claude — duet
+Comment=Resume the duet project
+Exec=ptyxis --new-window --working-directory=/home/sven/Desktop/Projects/duet -- bash -ic "claude --dangerously-skip-permissions --append-system-prompt-file /home/sven/Desktop/Projects/duet/project_info.md"
+Icon=utilities-terminal
+Terminal=false
+Categories=Development;

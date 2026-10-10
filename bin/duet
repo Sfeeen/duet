@@ -1,0 +1,4 @@
+#!/bin/sh
+# Run duet from any directory:  ~/duet/bin/duet say "hello"
+here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PYTHONPATH="$here${PYTHONPATH:+:$PYTHONPATH}" exec python3 -m duet "$@"
