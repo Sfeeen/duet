@@ -155,7 +155,45 @@ def open_hub(args):
 
 # ---- the two loops ---------------------------------------------------------
 
+def ask_human(prompt, default=None):
+    """Only used when a value was not given on the command line."""
+    if not sys.stdin.isatty():
+        return default
+    try:
+        answer = input(prompt).strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SystemExit("\n[bridge] cancelled.")
+    return answer or default
+
+
+def compose_task():
+    """Let the operator type the master's brief, free-form, ending with Ctrl-D."""
+    if not sys.stdin.isatty():
+        return ""
+    print("\nWhat is the master to find out? Write it as you would brief a person.")
+    print("Finish with Ctrl-D on an empty line.\n")
+    lines = []
+    while True:
+        try:
+            lines.append(input())
+        except EOFError:
+            break
+        except KeyboardInterrupt:
+            raise SystemExit("\n[bridge] cancelled.")
+    return "\n".join(lines).strip()
+
+
 def run_master(args, ep):
+    if not args.task and not args.hub:
+        args.task = compose_task()
+        if not args.task:
+            raise SystemExit("[bridge] no task given — nothing to drive.")
+        args.sends = int(ask_human("\nSends per conversation [%d]: " % args.sends,
+                                   args.sends))
+        args.conversations = int(ask_human("Conversations [%d]: " % args.conversations,
+                                           args.conversations))
+        print()
+
     url = args.hub or open_hub(args)
     state = client.request(url, "/api/state")
     sends, convs = state["sends"], state["conversations"]
@@ -164,12 +202,13 @@ def run_master(args, ep):
     conv = state["conversation"]
 
     while True:
-        system = MASTER_SYSTEM.format(task=task, sends=sends, conv=conv, convs=convs)
+        template = args.system if args.replace_system else MASTER_SYSTEM
+        system = template.format(task=task, sends=sends, conv=conv, convs=convs)
         if lessons:
             system += "\nWhat the earlier conversations taught you:\n" + \
                       "\n".join("- " + l for l in lessons) + \
                       "\nDo not repeat an opening that already failed.\n"
-        if args.system:
+        if args.system and not args.replace_system:
             system += "\n" + args.system
         history = [{"role": "system", "content": system}]
         log("conversation %d/%d — thinking of an opening…" % (conv, convs))
@@ -256,13 +295,19 @@ def main(argv=None):
         sp.add_argument("--temperature", type=float, default=0.8)
         sp.add_argument("--max-tokens", type=int, default=700)
         sp.add_argument("--system", help="extra system prompt; - reads stdin")
+        sp.add_argument("--system-file", help="read that system prompt from a file")
+        sp.add_argument("--replace-system", action="store_true",
+                        help="use --system INSTEAD of the built-in master brief. "
+                             "{task} {sends} {conv} {convs} are filled in if present")
         sp.add_argument("--hub", help="hub URL")
         sp.add_argument("--patience", type=int, default=900,
                         help="seconds to wait for the other side (default 900)")
 
     m = sub.add_parser("master", help="open a run and drive it")
     shared(m)
-    m.add_argument("--task", help="what the master is to find out; - reads stdin")
+    m.add_argument("--task", help="what the master is to find out; - reads stdin. "
+                                  "Omit it and you are asked to type it")
+    m.add_argument("--task-file", help="read the task from a file")
     m.add_argument("--sends", type=int, default=6)
     m.add_argument("--conversations", type=int, default=1)
     m.add_argument("--port", type=int, default=7788)
@@ -276,6 +321,12 @@ def main(argv=None):
     for field in ("system", "task"):
         if getattr(args, field, None) == "-":
             setattr(args, field, sys.stdin.read())
+        src = getattr(args, field + "_file", None)
+        if src:
+            with open(src, encoding="utf-8") as fh:
+                setattr(args, field, fh.read())
+    if getattr(args, "replace_system", False) and not args.system:
+        raise SystemExit("[bridge] --replace-system needs --system or --system-file")
 
     ep = Endpoint(args.api, args.model, args.key, args.temperature, args.max_tokens)
     log("endpoint %s · model %s" % (ep.api, ep.model))
