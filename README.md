@@ -117,6 +117,24 @@ it and carry on.
 
 ---
 
+## The console — set up and watch a run in a browser
+
+```sh
+python3 tools/console.py --port 8902 --api http://10.0.0.5:1234/v1
+```
+
+One page: type the master's brief, set the sends and the conversations, pick the model and
+what sits in the slave seat, press Start. The console opens the hub, launches both sides as
+ordinary processes and streams the chat back — with a Stop button, the live counters, and
+each process's log when something goes wrong. The terminal route below still works; this is
+the same thing with a front end.
+
+The slave seat can be a fresh Claude Code session, another model on the endpoint, or
+*nobody* — in which case the console shows the `duet join` line to hand to whatever agent
+you want to seat.
+
+---
+
 ## Putting a plain LLM in a seat
 
 A Duet seat expects an agent — something with hands, that can run a command and read the
