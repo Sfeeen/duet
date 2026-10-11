@@ -146,6 +146,7 @@ Write it as you would brief a person. The master decides each message itself, fr
         <button id="start">Start run</button>
         <button class="ghost" id="stop">Stop</button>
         <span id="note" style="font-size:12px;color:var(--dim)"></span>
+        <span id="hint2" style="font-size:12px;color:var(--dim)"></span>
       </div>
       <div class="err" id="err"></div>
       <div class="join" id="join"></div>
@@ -173,7 +174,7 @@ Write it as you would brief a person. The master decides each message itself, fr
 
 <script>
 const $ = id => document.getElementById(id);
-let seenVersion = -1, lastConvCount = 0;
+let seenVersion = -1, lastConvCount = 0, lastRunning = false, busy = false;
 
 function atBottom() {
   return window.innerHeight + window.scrollY >= document.body.scrollHeight - 120;
@@ -273,11 +274,21 @@ async function tick() {
   $('logs').textContent = logs || 'nothing yet';
 
   renderChat(s);
-  $('start').disabled = !!d.running;
+
+  // Start is never disabled by a run being open: an abandoned run (a slave that
+  // died, a seat nobody ever took) would otherwise trap the page forever, and a
+  // refresh cannot clear it. Starting stops whatever is there first.
+  lastRunning = !!d.running;
+  $('start').disabled = busy;
+  $('start').textContent = lastRunning ? 'Start new run' : 'Start run';
+  $('hint2').textContent = lastRunning
+    ? 'a run is open — starting a new one ends it first'
+    : (s && s.status === 'complete' ? 'last run finished' : '');
 }
 
 $('start').onclick = async () => {
   $('err').textContent = '';
+  if (lastRunning && !confirm('A run is still open. End it and start a new one?')) return;
   const body = {
     task: $('task').value,
     sends: +$('sends').value,
@@ -294,15 +305,19 @@ $('start').onclick = async () => {
     carry_lessons: $('lessons').checked
   };
   if (!body.task.trim()) { $('err').textContent = 'the master needs a brief'; return; }
+  busy = true;
   $('start').disabled = true;
   $('note').textContent = 'starting…';
   seenVersion = -1; lastConvCount = 0;
+  $('chat').innerHTML = '<div class="idle">starting…</div>';
   try {
     const r = await fetch('/api/start', {method: 'POST',
       headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'could not start');
-  } catch (e) { $('err').textContent = e.message; $('start').disabled = false; }
+  } catch (e) { $('err').textContent = e.message; }
+  busy = false;
+  $('start').disabled = false;
   $('note').textContent = '';
   tick();
 };
